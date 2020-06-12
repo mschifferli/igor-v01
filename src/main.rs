@@ -7,6 +7,7 @@ extern crate portaudio;
 extern crate nalgebra_glm as glm;
 
 
+
 use portaudio as pa;
 
 const SAMPLE_RATE: f64 = 44_100.0;
@@ -14,8 +15,14 @@ const FRAMES: u32 = 64;
 const CHANNELS: i32 = 2;
 const INTERLEAVED: bool = true;
 
-const DRY_MIX: f32 = 0.0;
+// const DRY_MIX: f32 = 0.0;
 
+const TEMPO_MIX: f32 = 0.15;
+const METRO_PITCH: f32 = 440.0;
+// how many samples in one cycle of the sine wave at this pitch?
+// const SAMPLES_PER_CYCLE: f32 = SAMPLE_RATE / METRO_PITCH;
+// how much does each sample need to progress to get this pitch?
+const METRO_INCREMENT : f32 = METRO_PITCH * (std::f64::consts::PI * 2.0 / SAMPLE_RATE) as f32 ;
 
 
 fn main() {
@@ -54,14 +61,14 @@ fn cubic_amplifier(input: f32) -> f32 {
 }
 
 fn tick(metronome: i32) -> f32 {
-  if metronome < 1000 {
-    let mut s = 0.5;
+  if metronome < 512 {
+    let mut s = TEMPO_MIX;
     if metronome < 10 {
-      s = metronome as f32 / 10.0;
-    } else if metronome > 900 {
-      s = 1.0 - (metronome as f32 - 900.0) / 100.0;
+      s *= metronome as f32 / 10.0;
+    } else if metronome > 448 {
+      s *= 1.0 - (metronome as f32 - 448.0) / 64.0;
     }
-    (metronome as f32 * 0.05).sin() * s
+    (metronome as f32 * METRO_INCREMENT).sin() * s
   } else {
     0.0
   }
@@ -113,22 +120,25 @@ fn run() -> Result<(), pa::Error> {
     // let delay_length: f64 = 0.5;
     // let delay_line: DelayLine = delay_line::DelayLine::new((delay_length * SAMPLE_RATE) as usize );
 
-    let delay = 8.0;
-    let tempo = 120.0; // beats per minute
+    // let delay = 8.0;
+    let tempo = 30.0; // beats per minute
     let beat = 60.0 / tempo; // how many seconds does a beat last?
-    let samplesPerBeat = (((SAMPLE_RATE * beat ) as i32) * CHANNELS) as i32;
-    let beatsPerRepeat = 4.0;
-    let mut count_down = (beatsPerRepeat + 1.0) * beat;
+    let samples_per_beat = (((SAMPLE_RATE * beat ) as i32) * CHANNELS) as i32;
+    let beats_per_repeat = 1.0;
+    // let mut count_down = (beats_per_repeat + 1.0) * beat;
+    let mut count_down = 5.0 * beat;
     let mut metronome = 0;
-    let barsToRecord = 16.0;
-    let mut duration = barsToRecord * beatsPerRepeat * beat;
+    let bars_to_record = 64.0;
+    let mut duration = bars_to_record * beats_per_repeat * beat;
     let length : usize = (((SAMPLE_RATE  * duration ) as i32) * CHANNELS) as usize;
     let mut buffer: Vec<f32> = vec![0.0; length];
     let mut index: usize = 0;
+    let jump = (samples_per_beat as f64 * beats_per_repeat) as i32;
+    let att: f32 = 0.5;
+    let mut back = samples_per_beat - 1;
 
+    let mut recording: Vec<f32> = vec![0.0; length];
 
-
-    let JUMP = (SAMPLE_RATE * delay ) as i32;
     // A callback to pass to the non-blocking stream.
     let callback = move |pa::DuplexStreamCallbackArgs {
                              in_buffer,
@@ -147,10 +157,10 @@ fn run() -> Result<(), pa::Error> {
 
         if count_down > 0.0 {
           count_down -= dt;
-          for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-              let mut o = tick(metronome);
+          for (output_sample, _input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
+              o = tick(metronome);
               metronome += 1;
-              if metronome == samplesPerBeat {
+              if metronome == samples_per_beat {
                 metronome = 0;
               }
               *output_sample = o
@@ -163,26 +173,33 @@ fn run() -> Result<(), pa::Error> {
           duration -= dt;
           
           let mut i2 : i32;
-          let ATT: f32 = 0.5;
-          let mut attenuation: f32 = ATT;
+          let mut attenuation: f32;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-              let mut o = tick(metronome);
-              metronome += 1;
-              if metronome == samplesPerBeat {
-                metronome = 0;
-              }
-              o += fuzz(*input_sample);
-              i2 = (index as i32) - JUMP;
+              // o = fuzz(*input_sample);
+              o = *input_sample;
+              // o = 0.0;
+              i2 = (index as i32) - jump + back;
               attenuation = 0.9;
               buffer[index] = o;
-              index = index + 1;
-              if index >= length {
-                index = 0;
+              back -= 2;
+              if back <= -samples_per_beat {
+                back = samples_per_beat - 1;
               }
               while i2 >= 0 && attenuation > 0.05 {
                 o += buffer[i2 as usize] * attenuation;
-                i2 -= JUMP;
-                attenuation *= ATT;
+                i2 -= jump;
+                // attenuation *= att;
+                attenuation = 0.0;
+              }
+              o += tick(metronome);
+              recording[index] = o;
+              metronome += 1;
+              if metronome == samples_per_beat {
+                metronome = 0;
+              }
+              index += 1;
+              if index >= length {
+                index = 0;
               }
               *output_sample = o
           }
@@ -191,7 +208,7 @@ fn run() -> Result<(), pa::Error> {
           if duration > 0.0 {
               pa::Continue
           } else {
-              println!("{:?}", buffer);
+              // println!("{:?}", buffer);
               pa::Complete
           } 
         }
