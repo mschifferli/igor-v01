@@ -139,6 +139,8 @@ fn run() -> Result<(), pa::Error> {
 
     let mut recording: Vec<f32> = vec![0.0; length];
 
+    let mut audio_buffer : &[f32] = &[];
+
     // A callback to pass to the non-blocking stream.
     let callback = move |pa::DuplexStreamCallbackArgs {
                              in_buffer,
@@ -164,8 +166,9 @@ fn run() -> Result<(), pa::Error> {
                 metronome = 0;
               }
               *output_sample = o
-          }          
-          sender.send(count_down).ok();
+          }
+          audio_buffer = out_buffer;
+          sender.send(audio_buffer).ok();
           pa::Continue
         } else {
           // Pass the input through the fuzz filter and then to the output
@@ -175,8 +178,8 @@ fn run() -> Result<(), pa::Error> {
           let mut i2 : i32;
           let mut attenuation: f32;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-              // o = fuzz(*input_sample);
-              o = *input_sample;
+              o = fuzz(*input_sample);
+              // o = *input_sample;
               // o = 0.0;
               i2 = (index as i32) - jump + back;
               attenuation = 0.9;
@@ -203,14 +206,18 @@ fn run() -> Result<(), pa::Error> {
               }
               *output_sample = o
           }
+          audio_buffer = out_buffer;
 
-          sender.send(o.into()).ok();
-          if duration > 0.0 {
-              pa::Continue
-          } else {
-              // println!("{:?}", buffer);
-              pa::Complete
-          } 
+          // sender.send(o.into()).ok();
+          // if duration > 0.0 {
+          match sender.send(audio_buffer) {
+              Ok(_) => portaudio::Continue, 
+              Err(_) => portaudio::Complete
+          }
+          // } else {
+          //     // println!("{:?}", buffer);
+          //     pa::Complete
+          // } 
         }
     };
 
@@ -223,7 +230,7 @@ fn run() -> Result<(), pa::Error> {
     while let true = stream.is_active()? {
         // Watch the countdown while we wait for the stream to finish
         while let Ok(count_down) = receiver.try_recv() {
-            println!("count_down: {:?}", count_down);
+            // println!("count_down: {:?}", count_down);
         }
     }
 
