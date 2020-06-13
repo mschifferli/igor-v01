@@ -6,9 +6,22 @@
 extern crate portaudio;
 extern crate nalgebra_glm as glm;
 
-
-
+// use std::sync::mpsc::*;
+use three;
 use portaudio as pa;
+
+
+#[derive(Debug)]
+struct State {
+    sound_values: Vec<f32>,
+    scene_meshes: Vec<three::Mesh>
+}
+
+
+struct State2<'a> {
+  buffer: &'a [f32],
+  duration: f64
+}
 
 const SAMPLE_RATE: f64 = 44_100.0;
 const FRAMES: u32 = 64;
@@ -141,6 +154,8 @@ fn run() -> Result<(), pa::Error> {
 
     let mut audio_buffer : &[f32] = &[];
 
+
+
     // A callback to pass to the non-blocking stream.
     let callback = move |pa::DuplexStreamCallbackArgs {
                              in_buffer,
@@ -159,7 +174,7 @@ fn run() -> Result<(), pa::Error> {
 
         if count_down > 0.0 {
           count_down -= dt;
-          for (output_sample, _input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
+          for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
               o = tick(metronome);
               metronome += 1;
               if metronome == samples_per_beat {
@@ -167,8 +182,10 @@ fn run() -> Result<(), pa::Error> {
               }
               *output_sample = o
           }
-          audio_buffer = out_buffer;
-          sender.send(audio_buffer).ok();
+          sender.send( State2 {
+              buffer: in_buffer,
+              duration: count_down
+          }).ok();
           pa::Continue
         } else {
           // Pass the input through the fuzz filter and then to the output
@@ -210,7 +227,10 @@ fn run() -> Result<(), pa::Error> {
 
           // sender.send(o.into()).ok();
           // if duration > 0.0 {
-          match sender.send(audio_buffer) {
+          match sender.send(State2 {
+              buffer: in_buffer,
+              duration: duration
+          }) {
               Ok(_) => portaudio::Continue, 
               Err(_) => portaudio::Complete
           }
@@ -227,14 +247,73 @@ fn run() -> Result<(), pa::Error> {
     stream.start()?;
 
     // Loop while the non-blocking stream is active.
-    while let true = stream.is_active()? {
-        // Watch the countdown while we wait for the stream to finish
-        while let Ok(count_down) = receiver.try_recv() {
-            // println!("count_down: {:?}", count_down);
-        }
+    // while let true = stream.is_active()? {
+    //     // Watch the count down while we wait for the stream to finish
+    //     while let Ok(count_down) = receiver.try_recv() {
+    //         // println!("count_down: {:?}", count_down);
+    //     }
+    // }
+
+    let mut builder = three::Window::builder("Igor"); 
+    builder.fullscreen(true); 
+    let mut win = builder.build(); 
+    win.scene.background = three::Background::Color(0x000000);
+    let mut state = State {
+        sound_values: Vec::new(),
+        scene_meshes: Vec::new()
+    };
+
+    let camera = win.factory.orthographic_camera([0.0, 0.0], 1.0, -1.0 .. 1.0); 
+
+    while win.update() && !win.input.hit(three::KEY_ESCAPE) {
+        update_lines(&mut win, &mut state);
+        win.render(&camera);
+        remove_lines(&mut win, &mut state);
+
+        while let Ok(stream_state) = receiver.try_recv() {
+            println!("count_down: {:?}", stream_state.duration);
+            update_sound_values(stream_state.buffer, &mut state); 
+       }
     }
+
 
     stream.stop()?;
 
     Ok(())
+}
+
+
+
+fn update_sound_values(samples: &[f32], state: &mut State) {
+   state.sound_values = samples.to_vec(); 
+}
+
+fn update_lines(win: &mut three::window::Window, state: &mut State) {
+    for (index, y_position) in state.sound_values.iter().enumerate() {
+        let i = index as f32; 
+        let num_samples = state.sound_values.len() as f32; 
+        let scale = 3.0; 
+        let x_position = (i / (num_samples / scale)) - (0.5 * scale);
+
+        let geometry = three::Geometry::with_vertices(vec![
+            [x_position, y_position.clone(), 0.0].into(),
+            [x_position, -y_position.clone(), 0.0].into()
+        ]);
+
+        let material = three::material::Line {
+            color: 0xFFFFFF,
+        };
+
+        let mesh = win.factory.mesh(geometry, material);
+        win.scene.add(&mesh); 
+        state.scene_meshes.push(mesh); 
+    }
+}
+
+fn remove_lines(win: &mut three::window::Window, state: &mut State) {
+    for mesh in &state.scene_meshes {
+        win.scene.remove(&mesh); 
+    }
+
+    state.scene_meshes.clear(); 
 }
