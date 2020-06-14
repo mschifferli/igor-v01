@@ -28,6 +28,8 @@ const FRAMES: u32 = 64;
 const CHANNELS: i32 = 2;
 const INTERLEAVED: bool = true;
 
+const WITH_FUZZ : bool = false;
+
 // const DRY_MIX: f32 = 0.0;
 
 const TEMPO_MIX: f32 = 0.15;
@@ -195,7 +197,11 @@ fn run() -> Result<(), pa::Error> {
           let mut i2 : i32;
           let mut attenuation: f32;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-              o = fuzz(*input_sample);
+              if WITH_FUZZ {
+                  o = fuzz(*input_sample);
+              } else {
+                  o = *input_sample;            
+              }
               // o = *input_sample;
               // o = 0.0;
               i2 = (index as i32) - jump + back;
