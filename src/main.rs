@@ -9,6 +9,8 @@ extern crate nalgebra_glm as glm;
 // use std::sync::mpsc::*;
 use three;
 use portaudio as pa;
+use hound;
+// use std::i16;
 
 
 #[derive(Debug)]
@@ -19,8 +21,10 @@ struct State {
 
 
 struct State2<'a> {
+  input: &'a [f32],
   buffer: &'a [f32],
-  duration: f64
+  duration: f64, 
+  index: usize
 }
 
 const SAMPLE_RATE: f64 = 44_100.0;
@@ -29,6 +33,8 @@ const CHANNELS: i32 = 2;
 const INTERLEAVED: bool = true;
 
 const WITH_FUZZ : bool = false;
+
+const COUNT_DOWN_BEATS : f64 = 1.0;
 
 // const DRY_MIX: f32 = 0.0;
 
@@ -141,20 +147,19 @@ fn run() -> Result<(), pa::Error> {
     let samples_per_beat = (((SAMPLE_RATE * beat ) as i32) * CHANNELS) as i32;
     let beats_per_repeat = 1.0;
     // let mut count_down = (beats_per_repeat + 1.0) * beat;
-    let mut count_down = 5.0 * beat;
+    let mut count_down = COUNT_DOWN_BEATS * beat;
     let mut metronome = 0;
-    let bars_to_record = 64.0;
+    let bars_to_record = 128.0;
     let mut duration = bars_to_record * beats_per_repeat * beat;
     let length : usize = (((SAMPLE_RATE  * duration ) as i32) * CHANNELS) as usize;
     let mut buffer: Vec<f32> = vec![0.0; length];
     let mut index: usize = 0;
     let jump = (samples_per_beat as f64 * beats_per_repeat) as i32;
-    let att: f32 = 0.5;
+    let _att: f32 = 0.5;
     let mut back = samples_per_beat - 1;
 
     let mut recording: Vec<f32> = vec![0.0; length];
 
-    let mut audio_buffer : &[f32] = &[];
 
 
 
@@ -172,11 +177,11 @@ fn run() -> Result<(), pa::Error> {
         maybe_last_time = Some(current_time);
 
         assert!(frames == FRAMES as usize);
-        let mut o : f32 = 0.0;
+        let mut o : f32;
 
         if count_down > 0.0 {
           count_down -= dt;
-          for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
+          for (output_sample, _input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
               o = tick(metronome);
               metronome += 1;
               if metronome == samples_per_beat {
@@ -185,8 +190,10 @@ fn run() -> Result<(), pa::Error> {
               *output_sample = o
           }
           sender.send( State2 {
-              buffer: in_buffer,
-              duration: count_down
+              input: &[],
+              buffer: &[],
+              duration: count_down,
+              index: 0
           }).ok();
           pa::Continue
         } else {
@@ -226,16 +233,18 @@ fn run() -> Result<(), pa::Error> {
               index += 1;
               if index >= length {
                 index = 0;
+                println!("Overwriting in buffer");
               }
               *output_sample = o
           }
-          audio_buffer = out_buffer;
-
-          // sender.send(o.into()).ok();
-          // if duration > 0.0 {
+          println!("in_buffer: {:?}", in_buffer);
           match sender.send(State2 {
-              buffer: in_buffer,
-              duration: duration
+              input: in_buffer,
+              buffer: out_buffer,
+              // input: &[],
+              // buffer: &[],
+              duration: duration, 
+              index: index
           }) {
               Ok(_) => portaudio::Continue, 
               Err(_) => portaudio::Complete
@@ -271,19 +280,72 @@ fn run() -> Result<(), pa::Error> {
 
     let camera = win.factory.orthographic_camera([0.0, 0.0], 1.0, -1.0 .. 1.0); 
 
+    let mut wav_raw: Vec<f32> = Vec::with_capacity(length);
+    let mut wav_mix: Vec<f32> = Vec::with_capacity(length);
+
     while win.update() && !win.input.hit(three::KEY_ESCAPE) {
         update_lines(&mut win, &mut state);
         win.render(&camera);
         remove_lines(&mut win, &mut state);
 
         while let Ok(stream_state) = receiver.try_recv() {
-            println!("count_down: {:?}", stream_state.duration);
-            update_sound_values(stream_state.buffer, &mut state); 
+            println!("count_down: {:?} ", stream_state.duration);
+            update_sound_values(stream_state.input, &mut state); 
+            let mut any_non_zero : bool = false;
+            for s in stream_state.input.to_vec().iter_mut() {
+              wav_raw.push(*s);
+              if *s != 0.0 {
+                any_non_zero = true;
+                // println!("{:?}", *s);
+              }
+            }
+            for s in stream_state.buffer.to_vec().iter_mut() {
+              wav_mix.push(*s);
+            }
+            // println!("wav_mix.len() = {:?}", wav_mix.len());
+            if any_non_zero {
+                println!("stream_state.index: {:?}, wav_mix.length: {:?}", stream_state.index, wav_mix.len());
+            }
        }
+
     }
 
-
+    // let mut user_input = String::new();
+    // io::stdin().read_line(&mut user_input).ok();
     stream.stop()?;
+
+    // println!("final: {:?}", wav_raw);
+
+
+    // normalize the output against the output max
+    let mx = wav_mix.iter().fold(0.0, |a:f32, &b| a.max(b.abs()));
+    println!("max {:?}", mx);
+    let mult = 1.0 / mx;
+
+
+    let ending = wav_raw[wav_raw.len() - 128 .. wav_raw.len()].to_vec();
+    println!("Last entries in input\n\t{:?}", ending);
+
+
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: 44100, // SAMPLE_RATE as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut path: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/raw.wav");
+    let mut writer = hound::WavWriter::create(path, spec).unwrap();
+    for s in wav_raw.iter() {
+        writer.write_sample(*s * mult).unwrap();
+    }
+    writer.finalize().unwrap();
+
+    path = concat!(env!("CARGO_MANIFEST_DIR"), "/mix.wav");
+    writer = hound::WavWriter::create(path, spec).unwrap();
+    for s in wav_mix.iter() {
+        writer.write_sample(*s * mult).unwrap();
+    }
+    writer.finalize().unwrap();
 
     Ok(())
 }
