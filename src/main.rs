@@ -11,6 +11,7 @@ use three;
 use portaudio as pa;
 use hound;
 // use std::i16;
+use std::sync::{Arc, Mutex};
 
 
 #[derive(Debug)]
@@ -152,13 +153,23 @@ fn run() -> Result<(), pa::Error> {
     let bars_to_record = 128.0;
     let mut duration = bars_to_record * beats_per_repeat * beat;
     let length : usize = (((SAMPLE_RATE  * duration ) as i32) * CHANNELS) as usize;
-    let mut buffer: Vec<f32> = vec![0.0; length];
-    let mut index: usize = 0;
+    
+
     let jump = (samples_per_beat as f64 * beats_per_repeat) as i32;
     let _att: f32 = 0.5;
     let mut back = samples_per_beat - 1;
 
+
+    let mut buffer: Vec<f32> = vec![0.0; length];
+    let buffer = Arc::new(Mutex::new(buffer));
+    let callback_buffer = Arc::clone(&buffer);
+    let mut index: usize = 0;
+    let max_index = Arc::new(Mutex::new(0));
+    let max_index = Arc::clone(&max_index);
+    
     let mut recording: Vec<f32> = vec![0.0; length];
+    let recording = Arc::new(Mutex::new(recording));
+    let callback_recording = Arc::clone(&recording);
 
 
 
@@ -203,6 +214,7 @@ fn run() -> Result<(), pa::Error> {
           
           let mut i2 : i32;
           let mut attenuation: f32;
+          // let start = index as usize;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
               if WITH_FUZZ {
                   o = fuzz(*input_sample);
@@ -213,19 +225,21 @@ fn run() -> Result<(), pa::Error> {
               // o = 0.0;
               i2 = (index as i32) - jump + back;
               attenuation = 0.9;
-              buffer[index] = o;
+              let mut buff = callback_buffer.lock().unwrap();
+              buff[index] = o;
               back -= 2;
               if back <= -samples_per_beat {
                 back = samples_per_beat - 1;
               }
               while i2 >= 0 && attenuation > 0.05 {
-                o += buffer[i2 as usize] * attenuation;
+                o += buff[i2 as usize] * attenuation;
                 i2 -= jump;
                 // attenuation *= att;
                 attenuation = 0.0;
               }
+              let mut rec = callback_recording.lock().unwrap();
+              rec[index] = o;
               o += tick(metronome);
-              recording[index] = o;
               metronome += 1;
               if metronome == samples_per_beat {
                 metronome = 0;
@@ -237,12 +251,12 @@ fn run() -> Result<(), pa::Error> {
               }
               *output_sample = o
           }
-          println!("in_buffer: {:?}", in_buffer);
+          // let end = index as usize;
+          // println!("in_buffer: {:?} \n\t {:?}", duration, in_buffer[0]);
+          // println!("in_buffer   : {:?}", in_buffer[0]);
           match sender.send(State2 {
               input: in_buffer,
               buffer: out_buffer,
-              // input: &[],
-              // buffer: &[],
               duration: duration, 
               index: index
           }) {
@@ -280,32 +294,16 @@ fn run() -> Result<(), pa::Error> {
 
     let camera = win.factory.orthographic_camera([0.0, 0.0], 1.0, -1.0 .. 1.0); 
 
-    let mut wav_raw: Vec<f32> = Vec::with_capacity(length);
-    let mut wav_mix: Vec<f32> = Vec::with_capacity(length);
-
     while win.update() && !win.input.hit(three::KEY_ESCAPE) {
         update_lines(&mut win, &mut state);
         win.render(&camera);
         remove_lines(&mut win, &mut state);
 
         while let Ok(stream_state) = receiver.try_recv() {
-            println!("count_down: {:?} ", stream_state.duration);
-            update_sound_values(stream_state.input, &mut state); 
-            let mut any_non_zero : bool = false;
-            for s in stream_state.input.to_vec().iter_mut() {
-              wav_raw.push(*s);
-              if *s != 0.0 {
-                any_non_zero = true;
-                // println!("{:?}", *s);
-              }
-            }
-            for s in stream_state.buffer.to_vec().iter_mut() {
-              wav_mix.push(*s);
-            }
-            // println!("wav_mix.len() = {:?}", wav_mix.len());
-            if any_non_zero {
-                println!("stream_state.index: {:?}, wav_mix.length: {:?}", stream_state.index, wav_mix.len());
-            }
+            // println!("count_down: {:?} ", stream_state.duration);
+            update_sound_values(stream_state.input, &mut state);   
+            let mut mx = max_index.lock().unwrap();
+            *mx = stream_state.index;
        }
 
     }
@@ -314,38 +312,41 @@ fn run() -> Result<(), pa::Error> {
     // io::stdin().read_line(&mut user_input).ok();
     stream.stop()?;
 
-    // println!("final: {:?}", wav_raw);
 
 
+    let index = max_index.lock().unwrap();
+    let index = *index;
+    let wav_mix = recording.lock().unwrap();
+    let wav_mix = &wav_mix[0..index];
+    // println!("final: {} {:?}", index, wav_raw);
     // normalize the output against the output max
     let mx = wav_mix.iter().fold(0.0, |a:f32, &b| a.max(b.abs()));
     println!("max {:?}", mx);
     let mult = 1.0 / mx;
 
 
-    let ending = wav_raw[wav_raw.len() - 128 .. wav_raw.len()].to_vec();
-    println!("Last entries in input\n\t{:?}", ending);
-
-
+    let wav_raw = buffer.lock().unwrap();
+    let wav_raw = &wav_raw[0..index];
+    
     let spec = hound::WavSpec {
         channels: 2,
-        sample_rate: 44100, // SAMPLE_RATE as u32,
+        sample_rate: SAMPLE_RATE as u32,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
-    let mut path: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/raw.wav");
-    let mut writer = hound::WavWriter::create(path, spec).unwrap();
+    let raw_path: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/raw.wav");
+    let mut raw_writer = hound::WavWriter::create(raw_path, spec).unwrap();
     for s in wav_raw.iter() {
-        writer.write_sample(*s * mult).unwrap();
+        raw_writer.write_sample(s * mult).unwrap();
     }
-    writer.finalize().unwrap();
+    raw_writer.finalize().unwrap();
 
-    path = concat!(env!("CARGO_MANIFEST_DIR"), "/mix.wav");
-    writer = hound::WavWriter::create(path, spec).unwrap();
+    let mix_path = concat!(env!("CARGO_MANIFEST_DIR"), "/mix.wav");
+    let mut mix_writer = hound::WavWriter::create(mix_path, spec).unwrap();
     for s in wav_mix.iter() {
-        writer.write_sample(*s * mult).unwrap();
+        mix_writer.write_sample(s * mult).unwrap();
     }
-    writer.finalize().unwrap();
+    mix_writer.finalize().unwrap();
 
     Ok(())
 }
@@ -357,21 +358,18 @@ fn update_sound_values(samples: &[f32], state: &mut State) {
 }
 
 fn update_lines(win: &mut three::window::Window, state: &mut State) {
+    let num_samples = state.sound_values.len() as f32; 
+    let scale = 3.0; 
     for (index, y_position) in state.sound_values.iter().enumerate() {
         let i = index as f32; 
-        let num_samples = state.sound_values.len() as f32; 
-        let scale = 3.0; 
         let x_position = (i / (num_samples / scale)) - (0.5 * scale);
-
+        let material = three::material::Line {
+            color: 0xFFFFFF,
+        };
         let geometry = three::Geometry::with_vertices(vec![
             [x_position, y_position.clone(), 0.0].into(),
             [x_position, -y_position.clone(), 0.0].into()
         ]);
-
-        let material = three::material::Line {
-            color: 0xFFFFFF,
-        };
-
         let mesh = win.factory.mesh(geometry, material);
         win.scene.add(&mesh); 
         state.scene_meshes.push(mesh); 
