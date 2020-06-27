@@ -23,8 +23,6 @@ struct State {
 
 struct State2<'a> {
   input: &'a [f32],
-  buffer: &'a [f32],
-  duration: f64, 
   index: usize
 }
 
@@ -33,9 +31,12 @@ const FRAMES: u32 = 64;
 const CHANNELS: i32 = 2;
 const INTERLEAVED: bool = true;
 
-const WITH_FUZZ : bool = false;
+const WITH_FUZZ : bool = true;
 
-const COUNT_DOWN_BEATS : f64 = 1.0;
+const GAIN: f32 = 0.5;
+
+const COUNT_DOWN_BEATS : f64 = 4.0;
+const FADE_SAMPLE_COUNT: i32 = 50;
 
 // const DRY_MIX: f32 = 0.0;
 
@@ -143,10 +144,10 @@ fn run() -> Result<(), pa::Error> {
     // let delay_line: DelayLine = delay_line::DelayLine::new((delay_length * SAMPLE_RATE) as usize );
 
     // let delay = 8.0;
-    let tempo = 30.0; // beats per minute
+    let tempo = 60.0; // beats per minute
     let beat = 60.0 / tempo; // how many seconds does a beat last?
     let samples_per_beat = (((SAMPLE_RATE * beat ) as i32) * CHANNELS) as i32;
-    let beats_per_repeat = 1.0;
+    let beats_per_repeat = 4.0;
     // let mut count_down = (beats_per_repeat + 1.0) * beat;
     let mut count_down = COUNT_DOWN_BEATS * beat;
     let mut metronome = 0;
@@ -160,18 +161,24 @@ fn run() -> Result<(), pa::Error> {
     let mut back = samples_per_beat - 1;
 
 
-    let mut buffer: Vec<f32> = vec![0.0; length];
+    let buffer: Vec<f32> = vec![0.0; length];
     let buffer = Arc::new(Mutex::new(buffer));
     let callback_buffer = Arc::clone(&buffer);
     let mut index: usize = 0;
     let max_index = Arc::new(Mutex::new(0));
     let max_index = Arc::clone(&max_index);
     
-    let mut recording: Vec<f32> = vec![0.0; length];
+    let recording: Vec<f32> = vec![0.0; length];
     let recording = Arc::new(Mutex::new(recording));
     let callback_recording = Arc::clone(&recording);
 
+    // FADE_SAMPLE_COUNT * 2.0 because when playing reverse samples 
+    // we increment the counter by 2
+    let back_fade_in: i32 = samples_per_beat - FADE_SAMPLE_COUNT * 2;
+    let back_fade_out: i32 = -samples_per_beat + FADE_SAMPLE_COUNT * 2;
 
+
+    // let mut anti_pop: f32 = 0.0;
 
 
     // A callback to pass to the non-blocking stream.
@@ -202,8 +209,6 @@ fn run() -> Result<(), pa::Error> {
           }
           sender.send( State2 {
               input: &[],
-              buffer: &[],
-              duration: count_down,
               index: 0
           }).ok();
           pa::Continue
@@ -213,7 +218,7 @@ fn run() -> Result<(), pa::Error> {
           duration -= dt;
           
           let mut i2 : i32;
-          let mut attenuation: f32;
+          // let mut attenuation: f32;
           // let start = index as usize;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
               if WITH_FUZZ {
@@ -224,21 +229,36 @@ fn run() -> Result<(), pa::Error> {
               // o = *input_sample;
               // o = 0.0;
               i2 = (index as i32) - jump + back;
-              attenuation = 0.9;
+              // attenuation = 0.9;
               let mut buff = callback_buffer.lock().unwrap();
               buff[index] = o;
-              back -= 2;
+              let mut anti_pop: f32 = 1.0;
               if back <= -samples_per_beat {
+                // let b4 = back;
                 back = samples_per_beat - 1;
-              }
-              while i2 >= 0 && attenuation > 0.05 {
-                o += buff[i2 as usize] * attenuation;
-                i2 -= jump;
-                // attenuation *= att;
-                attenuation = 0.0;
+                // println!("b4 {:?} back {:?} samples_per_beat {:?}", b4, back, samples_per_beat);
+                anti_pop = 0.0;
+                // println!("at {:?}", anti_pop);
+              } else if back > back_fade_in {
+                anti_pop = (samples_per_beat - back) as f32 / FADE_SAMPLE_COUNT as f32; 
+                // println!("fade in {:?}", anti_pop);
+              } else if back < back_fade_out {
+                anti_pop = (back + samples_per_beat) as f32 / FADE_SAMPLE_COUNT as f32; 
+                // println!("fade out {:?}", anti_pop);
+              } 
+
+              // while i2 >= 0 && attenuation > 0.05 {
+              //   o += buff[i2 as usize] * attenuation;
+              //   i2 -= jump;
+              //   // attenuation *= att;
+              //   attenuation = 0.0;
+              // }
+              if i2 >= 0 {
+                o += buff[i2 as usize] * anti_pop;
               }
               let mut rec = callback_recording.lock().unwrap();
-              rec[index] = o;
+              rec[index] = o * GAIN;
+              back -= 2;
               o += tick(metronome);
               metronome += 1;
               if metronome == samples_per_beat {
@@ -256,8 +276,6 @@ fn run() -> Result<(), pa::Error> {
           // println!("in_buffer   : {:?}", in_buffer[0]);
           match sender.send(State2 {
               input: in_buffer,
-              buffer: out_buffer,
-              duration: duration, 
               index: index
           }) {
               Ok(_) => portaudio::Continue, 
