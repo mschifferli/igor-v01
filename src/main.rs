@@ -6,13 +6,25 @@
 extern crate portaudio;
 extern crate nalgebra_glm as glm;
 
-// use std::sync::mpsc::*;
+
 use three;
 use portaudio as pa;
-use hound;
-// use std::i16;
+// use hound;
+
 use std::sync::{Arc, Mutex};
 
+mod effect;
+mod fuzz;
+mod distortion;
+mod symsoftclip;
+// mod lynch_delay;
+// mod scramble_delay;
+// mod truncate_delay;
+// mod truncate_loop;
+mod poly_loop;
+// mod delay;
+// mod beat_delay;
+use effect::{Effect, BufferedEffect};
 
 #[derive(Debug)]
 struct State {
@@ -31,16 +43,14 @@ const FRAMES: u32 = 64;
 const CHANNELS: i32 = 2;
 const INTERLEAVED: bool = true;
 
-const WITH_FUZZ : bool = true;
+const PRE: f32 = 20.0;
+// const GAIN: f32 = 0.25;
 
-const GAIN: f32 = 0.5;
-
-const COUNT_DOWN_BEATS : f64 = 4.0;
-const FADE_SAMPLE_COUNT: i32 = 50;
+const COUNT_DOWN_BEATS : f64 = 8.0;
 
 // const DRY_MIX: f32 = 0.0;
 
-const TEMPO_MIX: f32 = 0.15;
+const TEMPO_MIX: f32 = 0.1;
 const METRO_PITCH: f32 = 440.0;
 // how many samples in one cycle of the sine wave at this pitch?
 // const SAMPLES_PER_CYCLE: f32 = SAMPLE_RATE / METRO_PITCH;
@@ -57,33 +67,8 @@ fn main() {
     }
 }
 
-// the fuzz filter, when applied to all samples, will add some
-// distortion
-fn fuzz(input: f32) -> f32 {
-    (0..4).fold(input, |acc, _| cubic_amplifier(acc))
-}
 
-fn cubic_amplifier(input: f32) -> f32 {
-    // samples should be between -1.0 and 1.0
-    if input < 0.0 {
-        // if it's negative (-1.0 to 0), then adding 1.0 takes it to
-        // the 0 to 1.0 range. If it's cubed, it still won't leave the
-        // 0 to 1.0 range.
-        let negated = input + 1.0;
-        // (((negated * negated * negated) - 1.0) * (1.0 - DRY_MIX) + input * DRY_MIX)
-        (negated * negated * negated) - 1.0
-    } else {
-        // if it's positive (0 to 1.0), then subtracting 1.0 takes it
-        // to the -1.0 to 0 range. If it's cubed, it still won't leave
-        // the -1.0 to 0 range.
-        let negated = input - 1.0;
-        // (((negated * negated * negated) + 1.0) * (1.0 - DRY_MIX) + input * DRY_MIX)
-        (negated * negated * negated) + 1.0
-
-    }
-}
-
-fn tick(metronome: i32) -> f32 {
+fn tick(metronome: usize) -> f32 {
   if metronome < 512 {
     let mut s = TEMPO_MIX;
     if metronome < 10 {
@@ -144,22 +129,24 @@ fn run() -> Result<(), pa::Error> {
     // let delay_line: DelayLine = delay_line::DelayLine::new((delay_length * SAMPLE_RATE) as usize );
 
     // let delay = 8.0;
-    let tempo = 60.0; // beats per minute
+    let tempo = 240.0; // beats per minute
     let beat = 60.0 / tempo; // how many seconds does a beat last?
-    let samples_per_beat = (((SAMPLE_RATE * beat ) as i32) * CHANNELS) as i32;
-    let beats_per_repeat = 4.0;
+    let samples_per_beat: usize = ((SAMPLE_RATE * beat ) as usize) * CHANNELS as usize;
+    let beats_per_repeat: usize = 10;
     // let mut count_down = (beats_per_repeat + 1.0) * beat;
     let mut count_down = COUNT_DOWN_BEATS * beat;
-    let mut metronome = 0;
-    let bars_to_record = 128.0;
-    let mut duration = bars_to_record * beats_per_repeat * beat;
+    let mut metronome: usize = 0;
+    let bars_to_record: usize = 128;
+    let mut duration = (bars_to_record * beats_per_repeat) as f64 * beat;
     let length : usize = (((SAMPLE_RATE  * duration ) as i32) * CHANNELS) as usize;
     
 
-    let jump = (samples_per_beat as f64 * beats_per_repeat) as i32;
-    let _att: f32 = 0.5;
-    let mut back = samples_per_beat - 1;
 
+
+    let _att: f32 = 0.5;
+    // let mut back = samples_per_beat - 1;
+    // let jump = (samples_per_beat as f64 * beats_per_repeat) as i32;
+    
 
     let buffer: Vec<f32> = vec![0.0; length];
     let buffer = Arc::new(Mutex::new(buffer));
@@ -172,13 +159,30 @@ fn run() -> Result<(), pa::Error> {
     let recording = Arc::new(Mutex::new(recording));
     let callback_recording = Arc::clone(&recording);
 
-    // FADE_SAMPLE_COUNT * 2.0 because when playing reverse samples 
-    // we increment the counter by 2
-    let back_fade_in: i32 = samples_per_beat - FADE_SAMPLE_COUNT * 2;
-    let back_fade_out: i32 = -samples_per_beat + FADE_SAMPLE_COUNT * 2;
 
+    // let distortion = distortion::Distortion::new();
+    // let distortion = Arc::new(Mutex::new(distortion));
+    // let callback_fuzz = Arc::clone(&distortion);
 
-    // let mut anti_pop: f32 = 0.0;
+    // let fuzz = fuzz::Fuzz::new(2);
+    // let fuzz = Arc::new(Mutex::new(fuzz));
+    // let callback_fuzz = Arc::clone(&fuzz);
+
+    let fuzz = distortion::Distortion::new(2.0);
+    let fuzz = Arc::new(Mutex::new(fuzz));
+    let callback_fuzz = Arc::clone(&fuzz);
+
+    // let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    // let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    // let delay = lynch_delay::LynchDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    // let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    // let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    // let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
+    
+    let delay = Arc::new(Mutex::new(delay));
+    let callback_delay = Arc::clone(&delay);
+
 
 
     // A callback to pass to the non-blocking stream.
@@ -216,49 +220,20 @@ fn run() -> Result<(), pa::Error> {
           // Pass the input through the fuzz filter and then to the output
           // BEWARE OF FEEDBACK!
           duration -= dt;
-          
-          let mut i2 : i32;
-          // let mut attenuation: f32;
-          // let start = index as usize;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-              if WITH_FUZZ {
-                  o = fuzz(*input_sample);
-              } else {
-                  o = *input_sample;            
-              }
-              // o = *input_sample;
-              // o = 0.0;
-              i2 = (index as i32) - jump + back;
-              // attenuation = 0.9;
-              let mut buff = callback_buffer.lock().unwrap();
-              buff[index] = o;
-              let mut anti_pop: f32 = 1.0;
-              if back <= -samples_per_beat {
-                // let b4 = back;
-                back = samples_per_beat - 1;
-                // println!("b4 {:?} back {:?} samples_per_beat {:?}", b4, back, samples_per_beat);
-                anti_pop = 0.0;
-                // println!("at {:?}", anti_pop);
-              } else if back > back_fade_in {
-                anti_pop = (samples_per_beat - back) as f32 / FADE_SAMPLE_COUNT as f32; 
-                // println!("fade in {:?}", anti_pop);
-              } else if back < back_fade_out {
-                anti_pop = (back + samples_per_beat) as f32 / FADE_SAMPLE_COUNT as f32; 
-                // println!("fade out {:?}", anti_pop);
+              o = *input_sample * PRE;
+              {
+                  let mut buff = callback_buffer.lock().unwrap();
+                  buff[index] = o;
               } 
-
-              // while i2 >= 0 && attenuation > 0.05 {
-              //   o += buff[i2 as usize] * attenuation;
-              //   i2 -= jump;
-              //   // attenuation *= att;
-              //   attenuation = 0.0;
-              // }
-              if i2 >= 0 {
-                o += buff[i2 as usize] * anti_pop;
+              // let mut fuzz = callback_fuzz.lock().unwrap();
+              // o = fuzz.process_sample(o);
+              let mut delay = callback_delay.lock().unwrap(); 
+              o += delay.process_sample(index);
+              {
+                let mut rec = callback_recording.lock().unwrap();
+                rec[index] = o;
               }
-              let mut rec = callback_recording.lock().unwrap();
-              rec[index] = o * GAIN;
-              back -= 2;
               o += tick(metronome);
               metronome += 1;
               if metronome == samples_per_beat {
