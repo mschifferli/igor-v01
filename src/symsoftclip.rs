@@ -14,17 +14,9 @@ impl SymSoftClip {
 
 impl Effect for SymSoftClip {
     fn process_sample(&mut self, input: f32) -> f32 {
+        // input * input * (3.0 - 2.0 * input.abs()) * input.signum()
         let x = input.abs();
-        if x < 0.33 {
-            input * 2.0
-        } else if x < 0.67 {
-            (3.0 - (2.0 - 3.0 * input).powi(2)) / 3.0 * input.signum()
-        } else {
-            input
-        }
-
-        // or 
-        // (input - input.powi(3) / 3.0) * 1.333333 
+        6.0 * x.powi(5) - 15.0 * x.powi(4) + 10.0 * x.powi(3) * input.signum()
     }
 }
 

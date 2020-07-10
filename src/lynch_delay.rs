@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use super::effect::BufferedEffect;
 
@@ -12,13 +12,13 @@ pub struct LynchDelay {
   // we increment the counter by 2
   back_fade_in: i32,
   back_fade_out: i32,
-  buffer: Arc<Mutex<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>
 }
 
 
 
 impl LynchDelay {
-    pub fn new(samples_per_beat: usize, beats_per_repeat: usize, buffer: Arc<Mutex<Vec<f32>>>) -> Self {
+    pub fn new(samples_per_beat: usize, beats_per_repeat: usize, buffer: Arc<RwLock<Vec<f32>>>) -> Self {
         let samps = samples_per_beat as i32;
         let delay = LynchDelay {
           samples_per_beat: samps,
@@ -58,7 +58,7 @@ impl BufferedEffect for LynchDelay {
             //   attenuation = 0.0;
             // }
             self.back -= 2;         
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.read().unwrap();
             buffer[i2 as usize] * anti_pop
         } else {
             0.0          

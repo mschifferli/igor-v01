@@ -11,18 +11,19 @@ use three;
 use portaudio as pa;
 // use hound;
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 mod effect;
 mod fuzz;
 mod distortion;
 mod symsoftclip;
-// mod lynch_delay;
-// mod scramble_delay;
-// mod truncate_delay;
-// mod truncate_loop;
+mod lynch_delay;
+mod beat_delay;
+mod scramble_delay;
+mod truncate_delay;
+mod truncate_loop;
 mod poly_loop;
-// mod delay;
+mod delay;
 // mod beat_delay;
 use effect::{Effect, BufferedEffect};
 
@@ -149,38 +150,33 @@ fn run() -> Result<(), pa::Error> {
     
 
     let buffer: Vec<f32> = vec![0.0; length];
-    let buffer = Arc::new(Mutex::new(buffer));
+    let buffer = Arc::new(RwLock::new(buffer));
     let callback_buffer = Arc::clone(&buffer);
     let mut index: usize = 0;
-    let max_index = Arc::new(Mutex::new(0));
+    let max_index = Arc::new(RwLock::new(0));
     let max_index = Arc::clone(&max_index);
     
     let recording: Vec<f32> = vec![0.0; length];
-    let recording = Arc::new(Mutex::new(recording));
+    let recording = Arc::new(RwLock::new(recording));
     let callback_recording = Arc::clone(&recording);
 
 
-    // let distortion = distortion::Distortion::new();
-    // let distortion = Arc::new(Mutex::new(distortion));
-    // let callback_fuzz = Arc::clone(&distortion);
-
-    // let fuzz = fuzz::Fuzz::new(2);
-    // let fuzz = Arc::new(Mutex::new(fuzz));
-    // let callback_fuzz = Arc::clone(&fuzz);
-
-    let fuzz = distortion::Distortion::new(2.0);
-    let fuzz = Arc::new(Mutex::new(fuzz));
+    
+    // let fuzz = symsoftclip::SymSoftClip::new();
+    // let fuzz = distortion::Distortion::new(2.0);
+    let fuzz = fuzz::Fuzz::new(8);
+    let fuzz = Arc::new(RwLock::new(fuzz));
     let callback_fuzz = Arc::clone(&fuzz);
 
-    // let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    // let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
-    // let delay = lynch_delay::LynchDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
-    // let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
-    // let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    // let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
+    let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    let delay = lynch_delay::LynchDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    // let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
     
-    let delay = Arc::new(Mutex::new(delay));
+    let delay = Arc::new(RwLock::new(delay));
     let callback_delay = Arc::clone(&delay);
 
 
@@ -198,8 +194,12 @@ fn run() -> Result<(), pa::Error> {
         let dt = current_time - prev_time;
         maybe_last_time = Some(current_time);
 
-        assert!(frames == FRAMES as usize);
+        // assert!(frames == FRAMES as usize);
         let mut o : f32;
+              let mut fuzz = callback_fuzz.write().unwrap();
+              let mut delay = callback_delay.write().unwrap(); 
+              let mut rec = callback_recording.write().unwrap();
+
 
         if count_down > 0.0 {
           count_down -= dt;
@@ -221,19 +221,17 @@ fn run() -> Result<(), pa::Error> {
           // BEWARE OF FEEDBACK!
           duration -= dt;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
+
+
               o = *input_sample * PRE;
               {
-                  let mut buff = callback_buffer.lock().unwrap();
-                  buff[index] = o;
-              } 
-              // let mut fuzz = callback_fuzz.lock().unwrap();
-              // o = fuzz.process_sample(o);
-              let mut delay = callback_delay.lock().unwrap(); 
-              o += delay.process_sample(index);
-              {
-                let mut rec = callback_recording.lock().unwrap();
-                rec[index] = o;
+                let mut buff = callback_buffer.write().unwrap();
+                buff[index] = o;
               }
+              
+              o = fuzz.process_sample(o);
+              o += delay.process_sample(index);
+              rec[index] = o;
               o += tick(metronome);
               metronome += 1;
               if metronome == samples_per_beat {
@@ -295,7 +293,7 @@ fn run() -> Result<(), pa::Error> {
         while let Ok(stream_state) = receiver.try_recv() {
             // println!("count_down: {:?} ", stream_state.duration);
             update_sound_values(stream_state.input, &mut state);   
-            let mut mx = max_index.lock().unwrap();
+            let mut mx = max_index.write().unwrap();
             *mx = stream_state.index;
        }
 
@@ -307,9 +305,9 @@ fn run() -> Result<(), pa::Error> {
 
 
 
-    let index = max_index.lock().unwrap();
+    let index = max_index.read().unwrap();
     let index = *index;
-    let wav_mix = recording.lock().unwrap();
+    let wav_mix = recording.read().unwrap();
     let wav_mix = &wav_mix[0..index];
     // println!("final: {} {:?}", index, wav_raw);
     // normalize the output against the output max
@@ -318,7 +316,7 @@ fn run() -> Result<(), pa::Error> {
     let mult = 1.0 / mx;
 
 
-    let wav_raw = buffer.lock().unwrap();
+    let wav_raw = buffer.read().unwrap();
     let wav_raw = &wav_raw[0..index];
     
     let spec = hound::WavSpec {

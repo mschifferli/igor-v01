@@ -1,20 +1,20 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use super::effect::BufferedEffect;
 
 const FADE_SAMPLE_COUNT: usize = 50;
 
 pub struct PolyLoop {
-  samples_per_beat: usize,
-  beats_per_repeat_1: usize,
-  beats_per_repeat_2: usize,
+  // samples_per_beat: usize,
+  // beats_per_repeat_1: usize,
+  // beats_per_repeat_2: usize,
   samples_per_bar_1: usize,
   samples_per_bar_2: usize,
   index_1: usize,
   index_2: usize,
   fade_out_1: usize,
   fade_out_2: usize,
-  buffer: Arc<Mutex<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>
 }
 
 
@@ -23,11 +23,11 @@ impl PolyLoop {
     pub fn new(samples_per_beat: usize, 
           beats_per_repeat_1: usize, 
           beats_per_repeat_2: usize, 
-          buffer: Arc<Mutex<Vec<f32>>>) -> Self {
-        let mut delay = PolyLoop {
-          samples_per_beat: samples_per_beat,
-          beats_per_repeat_1: beats_per_repeat_1,
-          beats_per_repeat_2: beats_per_repeat_2,
+          buffer: Arc<RwLock<Vec<f32>>>) -> Self {
+        let delay = PolyLoop {
+          // samples_per_beat: samples_per_beat,
+          // beats_per_repeat_1: beats_per_repeat_1,
+          // beats_per_repeat_2: beats_per_repeat_2,
           samples_per_bar_1: samples_per_beat * beats_per_repeat_1,
           samples_per_bar_2: samples_per_beat * beats_per_repeat_2,
           index_1: 0,
@@ -44,7 +44,7 @@ impl PolyLoop {
 impl BufferedEffect for PolyLoop {
     fn process_sample(&mut self, index: usize) -> f32 {
         let mut o:f32 = 0.0;
-        let buffer = self.buffer.lock().unwrap();
+        let buffer = self.buffer.read().unwrap();
         if index >= self.samples_per_bar_1 {
             // println!("   self.beat_index {:?}", self.beat_index);
             let mut anti_pop: f32 = 1.0;

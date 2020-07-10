@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use super::effect::BufferedEffect;
 
@@ -22,7 +22,7 @@ pub struct TruncateDelay {
   len: usize,
   count: usize,
   fade_out: usize,
-  buffer: Arc<Mutex<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>
 }
 
 
@@ -30,7 +30,7 @@ pub struct TruncateDelay {
 impl TruncateDelay {
     pub fn new(samples_per_beat: usize, 
           beats_per_repeat: usize, 
-          buffer: Arc<Mutex<Vec<f32>>>,
+          buffer: Arc<RwLock<Vec<f32>>>,
           seed: f64) -> Self {
         let mut delay = TruncateDelay {
           samples_per_beat: samples_per_beat,
@@ -82,7 +82,7 @@ impl BufferedEffect for TruncateDelay {
                 anti_pop = (self.samples_per_beat - self.count) as f32 / FADE_SAMPLE_COUNT as f32; 
             }
             // println!("   anti_pop {:?}", anti_pop);
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.read().unwrap();
             // println!("   unwrapped");
             let sample = buffer[self.index as usize];
             self.count += 1;  

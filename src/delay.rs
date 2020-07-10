@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use super::effect::BufferedEffect;
 
@@ -20,13 +20,13 @@ pub struct Delay {
   // we increment the counter by 2
   back_fade_in: i32,
   back_fade_out: i32,
-  buffer: Arc<Mutex<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>
 }
 
 
 
 impl Delay {
-    pub fn new(samples_per_beat: usize, beats_per_repeat: usize, buffer: Arc<Mutex<Vec<f32>>>) -> Self {
+    pub fn new(samples_per_beat: usize, beats_per_repeat: usize, buffer: Arc<RwLock<Vec<f32>>>) -> Self {
         let samps = samples_per_beat as i32;
         let delay = Delay {
           samples_per_beat: samps,
@@ -45,7 +45,7 @@ impl BufferedEffect for Delay {
         if i2 >= 0 {
             // attenuation = 0.9;
             let mut anti_pop: f32 = 1.0;            
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.read().unwrap();
             buffer[i2 as usize] * anti_pop
         } else {
             0.0          
