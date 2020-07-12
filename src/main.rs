@@ -14,18 +14,18 @@ use portaudio as pa;
 use std::sync::{Arc, RwLock};
 
 mod effect;
-mod fuzz;
+// mod fuzz;
 mod distortion;
-mod symsoftclip;
 mod lynch_delay;
-mod beat_delay;
-mod scramble_delay;
-mod truncate_delay;
-mod truncate_loop;
-mod poly_loop;
-mod delay;
 // mod beat_delay;
-use effect::{Effect, BufferedEffect};
+// mod scramble_delay;
+// mod truncate_delay;
+// mod truncate_loop;
+// mod poly_loop;
+// mod delay;
+// mod beat_delay;
+mod metronome;
+use effect::{Effect, BufferedEffect, Source};
 
 #[derive(Debug)]
 struct State {
@@ -50,14 +50,7 @@ const PRE: f32 = 20.0;
 const COUNT_DOWN_BEATS : f64 = 8.0;
 
 // const DRY_MIX: f32 = 0.0;
-
 const TEMPO_MIX: f32 = 0.1;
-const METRO_PITCH: f32 = 440.0;
-// how many samples in one cycle of the sine wave at this pitch?
-// const SAMPLES_PER_CYCLE: f32 = SAMPLE_RATE / METRO_PITCH;
-// how much does each sample need to progress to get this pitch?
-const METRO_INCREMENT : f32 = METRO_PITCH * (std::f64::consts::PI * 2.0 / SAMPLE_RATE) as f32 ;
-
 
 fn main() {
     match run() {
@@ -68,21 +61,6 @@ fn main() {
     }
 }
 
-
-fn tick(metronome: usize) -> f32 {
-  if metronome < 512 {
-    let mut s = TEMPO_MIX;
-    if metronome < 10 {
-      s *= metronome as f32 / 10.0;
-    } else if metronome > 448 {
-      s *= 1.0 - (metronome as f32 - 448.0) / 64.0;
-    }
-    (metronome as f32 * METRO_INCREMENT).sin() * s
-  } else {
-    0.0
-  }
-
-}
 
 
 fn run() -> Result<(), pa::Error> {
@@ -126,29 +104,19 @@ fn run() -> Result<(), pa::Error> {
     // We'll use this channel to send the count_down to the main thread for fun.
     let (sender, receiver) = ::std::sync::mpsc::channel();
 
-    // let delay_length: f64 = 0.5;
-    // let delay_line: DelayLine = delay_line::DelayLine::new((delay_length * SAMPLE_RATE) as usize );
+    let mut met = metronome::Metronome::new(240.0, TEMPO_MIX);
 
-    // let delay = 8.0;
-    let tempo = 240.0; // beats per minute
-    let beat = 60.0 / tempo; // how many seconds does a beat last?
-    let samples_per_beat: usize = ((SAMPLE_RATE * beat ) as usize) * CHANNELS as usize;
+    let samples_per_beat: usize = met.samples_per_beat();
     let beats_per_repeat: usize = 10;
-    // let mut count_down = (beats_per_repeat + 1.0) * beat;
-    let mut count_down = COUNT_DOWN_BEATS * beat;
-    let mut metronome: usize = 0;
+    let mut count_down = COUNT_DOWN_BEATS * met.beat_duration();
     let bars_to_record: usize = 128;
-    let mut duration = (bars_to_record * beats_per_repeat) as f64 * beat;
+    let duration = (bars_to_record * beats_per_repeat) as f64 * met.beat_duration();
     let length : usize = (((SAMPLE_RATE  * duration ) as i32) * CHANNELS) as usize;
     
 
 
 
     let _att: f32 = 0.5;
-    // let mut back = samples_per_beat - 1;
-    // let jump = (samples_per_beat as f64 * beats_per_repeat) as i32;
-    
-
     let buffer: Vec<f32> = vec![0.0; length];
     let buffer = Arc::new(RwLock::new(buffer));
     let callback_buffer = Arc::clone(&buffer);
@@ -163,17 +131,17 @@ fn run() -> Result<(), pa::Error> {
 
     
     // let fuzz = symsoftclip::SymSoftClip::new();
-    // let fuzz = distortion::Distortion::new(2.0);
-    let fuzz = fuzz::Fuzz::new(8);
+    let fuzz = distortion::Distortion::new(2.0);
+    // let fuzz = fuzz::Fuzz::new(8);
     let fuzz = Arc::new(RwLock::new(fuzz));
     let callback_fuzz = Arc::clone(&fuzz);
 
-    let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    // let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    // let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
     let delay = lynch_delay::LynchDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
-    let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
-    let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    // let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    // let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
+    // let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
     // let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
     
     let delay = Arc::new(RwLock::new(delay));
@@ -196,19 +164,15 @@ fn run() -> Result<(), pa::Error> {
 
         // assert!(frames == FRAMES as usize);
         let mut o : f32;
-              let mut fuzz = callback_fuzz.write().unwrap();
-              let mut delay = callback_delay.write().unwrap(); 
-              let mut rec = callback_recording.write().unwrap();
+        let mut fuzz = callback_fuzz.write().unwrap();
+        let mut delay = callback_delay.write().unwrap(); 
+        let mut rec = callback_recording.write().unwrap();
 
 
         if count_down > 0.0 {
           count_down -= dt;
           for (output_sample, _input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-              o = tick(metronome);
-              metronome += 1;
-              if metronome == samples_per_beat {
-                metronome = 0;
-              }
+              o = met.get_sample();
               *output_sample = o
           }
           sender.send( State2 {
@@ -219,30 +183,29 @@ fn run() -> Result<(), pa::Error> {
         } else {
           // Pass the input through the fuzz filter and then to the output
           // BEWARE OF FEEDBACK!
-          duration -= dt;
+          // duration -= dt;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
-
-
               o = *input_sample * PRE;
               {
                 let mut buff = callback_buffer.write().unwrap();
                 buff[index] = o;
               }
               
-              o = fuzz.process_sample(o);
+              // o = fuzz.process_sample(o);
+              // let o2 = delay.process_sample(index);
+              // rec[index] = o2;
+              // o += o2;
               o += delay.process_sample(index);
               rec[index] = o;
-              o += tick(metronome);
-              metronome += 1;
-              if metronome == samples_per_beat {
-                metronome = 0;
-              }
+              o += met.get_sample();
               index += 1;
               if index >= length {
                 index = 0;
                 println!("Overwriting in buffer");
               }
-              *output_sample = o
+              // *output_sample = o
+              // *output_sample = o.clamp(-1.0, 1.0)
+              *output_sample = o.max(-1.0).min(1.0)
           }
           // let end = index as usize;
           // println!("in_buffer: {:?} \n\t {:?}", duration, in_buffer[0]);

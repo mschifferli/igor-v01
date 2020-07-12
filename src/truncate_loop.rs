@@ -6,8 +6,8 @@ const FADE_SAMPLE_COUNT: usize = 50;
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 fn rand(n: f64) -> f64 {
-  let s = (n * 43758.5453123).sin();
-  let f = s.fract();
+  // let s = (n * 43758.5453123).sin();
+  // let f = s.fract();
   // println!("rand s {} f {}", s, f ); 
   (n * 43758.5453123).sin().abs().fract()
 }
@@ -32,7 +32,7 @@ impl TruncateLoop {
           beats_per_repeat: usize, 
           buffer: Arc<RwLock<Vec<f32>>>,
           seed: f64) -> Self {
-        let mut delay = TruncateLoop {
+        let delay = TruncateLoop {
           samples_per_beat: samples_per_beat,
           beats_per_repeat: beats_per_repeat,
           samples_per_bar: samples_per_beat * beats_per_repeat,
@@ -55,7 +55,7 @@ impl TruncateLoop {
       // (rand(self.seed) * range as f64) as usize
     }
 
-    fn next_group(&mut self, index: usize) {
+    fn next_group(&mut self) {
         self.len = self.rand_int(self.beats_per_repeat - 1) + 1;
         self.index = 0;
         self.end_index = self.len * self.samples_per_beat;
@@ -72,7 +72,7 @@ impl BufferedEffect for TruncateLoop {
             0.0
         } else {
             if self.index >= self.end_index {
-                self.next_group(index);
+                self.next_group();
             }
             // println!("   self.beat_index {:?}", self.beat_index);
             let mut anti_pop: f32 = 1.0;
