@@ -11,7 +11,7 @@ use three;
 
 // use hound;
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 mod platform;
 mod effect;
@@ -119,7 +119,8 @@ fn run() -> Result<(), portaudio::Error> {
     let delay = Arc::new(RwLock::new(delay));
     let callback_delay = Arc::clone(&delay);
 
-
+    let mut effects:Vec<Box<Arc<RwLock<Effect>>>> = Vec::new();
+    effects.push(Box::new(callback_delay));
 
     // A callback to pass to the non-blocking stream.
     let callback = move |portaudio::DuplexStreamCallbackArgs {
@@ -136,10 +137,15 @@ fn run() -> Result<(), portaudio::Error> {
 
         // assert!(frames == FRAMES as usize);
         let mut o : f32;
-        let mut fuzz = callback_fuzz.write().unwrap();
-        let mut delay = callback_delay.write().unwrap(); 
-        let mut echo = callback_echo.write().unwrap();
+        // let mut fuzz = callback_fuzz.write().unwrap();
+        // let mut delay = callback_delay.write().unwrap(); 
+        // let mut echo = callback_echo.write().unwrap();
         let mut rec = callback_recording.write().unwrap();
+
+        let mut fx:Vec<RwLockWriteGuard<Effect>> = Vec::new();
+        for effect in effects.iter() {
+            fx.push(effect.write().unwrap());
+        }
 
 
         if count_down > 0.0 {
@@ -170,7 +176,11 @@ fn run() -> Result<(), portaudio::Error> {
               // rec[index] = o2;
               // o += o2;
               // o += echo.process_sample(o);
-              o += delay.process_sample(*input_sample * PRE);
+              // o += delay.process_sample(o);
+
+              for effek in fx.iter_mut() {
+                o += effek.process_sample(o);
+              }
               rec[index] = o;
               o += met.get_sample();
               index += 1;
