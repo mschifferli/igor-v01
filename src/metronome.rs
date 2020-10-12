@@ -69,6 +69,7 @@ impl Source for Metronome {
         self.tick += 1;
         if self.tick == self.samples_per_beat {
           self.tick = 0;
+          // println!("tick");
         }
         o
     }

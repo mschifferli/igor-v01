@@ -17,15 +17,16 @@ mod effect;
 // mod fuzz;
 mod distortion;
 mod lynch_delay;
+mod echo;
 // mod beat_delay;
 // mod scramble_delay;
 // mod truncate_delay;
 // mod truncate_loop;
-// mod poly_loop;
+mod poly_loop;
 // mod delay;
 // mod beat_delay;
 mod metronome;
-use effect::{Effect, BufferedEffect, Source};
+use effect::{Effect, BufferedEffect, RingBufferEffect, Source};
 
 #[derive(Debug)]
 struct State {
@@ -44,13 +45,13 @@ const FRAMES: u32 = 64;
 const CHANNELS: i32 = 2;
 const INTERLEAVED: bool = true;
 
-const PRE: f32 = 20.0;
+const PRE: f32 = 1.0;
 // const GAIN: f32 = 0.25;
 
 const COUNT_DOWN_BEATS : f64 = 8.0;
 
 // const DRY_MIX: f32 = 0.0;
-const TEMPO_MIX: f32 = 0.1;
+const TEMPO_MIX: f32 = 0.01;
 
 fn main() {
     match run() {
@@ -104,7 +105,7 @@ fn run() -> Result<(), pa::Error> {
     // We'll use this channel to send the count_down to the main thread for fun.
     let (sender, receiver) = ::std::sync::mpsc::channel();
 
-    let mut met = metronome::Metronome::new(240.0, TEMPO_MIX);
+    let mut met = metronome::Metronome::new(140.0, TEMPO_MIX);
 
     let samples_per_beat: usize = met.samples_per_beat();
     let beats_per_repeat: usize = 10;
@@ -128,6 +129,9 @@ fn run() -> Result<(), pa::Error> {
     let recording = Arc::new(RwLock::new(recording));
     let callback_recording = Arc::clone(&recording);
 
+    let echo = echo::Echo::new(0.25);
+    let echo = Arc::new(RwLock::new(echo));
+    let callback_echo = Arc::clone(&echo);
 
     
     // let fuzz = symsoftclip::SymSoftClip::new();
@@ -138,11 +142,11 @@ fn run() -> Result<(), pa::Error> {
 
     // let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
     // let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
-    let delay = lynch_delay::LynchDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
+    // let delay = lynch_delay::LynchDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
     // let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
     // let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
     // let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    // let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
+    let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
     
     let delay = Arc::new(RwLock::new(delay));
     let callback_delay = Arc::clone(&delay);
@@ -166,6 +170,7 @@ fn run() -> Result<(), pa::Error> {
         let mut o : f32;
         let mut fuzz = callback_fuzz.write().unwrap();
         let mut delay = callback_delay.write().unwrap(); 
+        let mut echo = callback_echo.write().unwrap();
         let mut rec = callback_recording.write().unwrap();
 
 
@@ -185,6 +190,7 @@ fn run() -> Result<(), pa::Error> {
           // BEWARE OF FEEDBACK!
           // duration -= dt;
           for (output_sample, input_sample) in out_buffer.iter_mut().zip(in_buffer.iter()) {
+              // o = 0.0; //*input_sample * PRE;
               o = *input_sample * PRE;
               {
                 let mut buff = callback_buffer.write().unwrap();
@@ -195,6 +201,7 @@ fn run() -> Result<(), pa::Error> {
               // let o2 = delay.process_sample(index);
               // rec[index] = o2;
               // o += o2;
+              // o += echo.process_sample(o);
               o += delay.process_sample(index);
               rec[index] = o;
               o += met.get_sample();

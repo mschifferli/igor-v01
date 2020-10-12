@@ -1,0 +1,42 @@
+TODO.txt
+
+stretch delay
+reich delay
+
+compressor
+tremolo
+gate:   http://adventures.michaelfbryan.com/posts/audio-processing-for-dummies/
+low pass filter: https://www.embeddedrelated.com/showarticle/779.php
+  y += alpha * (x-y);
+  
+
+
+
+envelope filter: https://rickyhan.com/jekyll/update/2018/02/06/rust-guitar-pedal-effects-dsp.html
+https://github.com/dangpzanco/autowah/blob/master/C%2B%2B/autoWah/autoWah.cpp 
+
+tuner: https://rickyhan.com/jekyll/update/2018/02/06/rust-guitar-pedal-effects-dsp.html
+
+pitch shift: http://www.guitarpitchshifter.com/algorithm.html
+http://blogs.zynaptiq.com/bernsee/time-pitch-overview/
+
+decouple the metronome
+
+
+
+interface!
+  https://medium.com/@delu/a-perceptually-meaningful-audio-visualizer-ee72051781bc
+  https://github.com/conundrumer/audioscope/blob/master/Cargo.toml
+  https://github.com/Rahix/visualizer2
+  https://github.com/crsaracco/audio-visualizer/blob/master/Cargo.toml
+  https://github.com/PaulFurtado/rusty_bars/tree/master/src
+
+
+how to run record without the window
+
+make saving files an option
+  raw input
+  processed output
+
+apply effects to wave file
+
