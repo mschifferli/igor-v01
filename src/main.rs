@@ -8,11 +8,12 @@ extern crate nalgebra_glm as glm;
 
 
 use three;
-use portaudio as pa;
+
 // use hound;
 
 use std::sync::{Arc, RwLock};
 
+mod platform;
 mod effect;
 // mod fuzz;
 mod distortion;
@@ -26,7 +27,8 @@ mod poly_loop;
 // mod delay;
 // mod beat_delay;
 mod metronome;
-use effect::{Effect, BufferedEffect, RingBufferEffect, Source};
+// use effect::{Effect, BufferedEffect, RingBufferEffect, Source};
+use effect::{BufferedEffect, Source};
 
 #[derive(Debug)]
 struct State {
@@ -39,11 +41,6 @@ struct State2<'a> {
   input: &'a [f32],
   index: usize
 }
-
-const SAMPLE_RATE: f64 = 44_100.0;
-const FRAMES: u32 = 64;
-const CHANNELS: i32 = 2;
-const INTERLEAVED: bool = true;
 
 const PRE: f32 = 1.0;
 // const GAIN: f32 = 0.25;
@@ -64,40 +61,11 @@ fn main() {
 
 
 
-fn run() -> Result<(), pa::Error> {
-    let pa = pa::PortAudio::new()?;
+fn run() -> Result<(), portaudio::Error> {
 
-    println!("PortAudio:");
-    println!("version: {}", pa.version());
-    println!("version text: {:?}", pa.version_text());
-    println!("host count: {}", pa.host_api_count()?);
-
-    let default_host = pa.default_host_api()?;
-    println!("default host: {:#?}", pa.host_api_info(default_host));
-
-    let def_input = pa.default_input_device()?;
-    let input_info = pa.device_info(def_input)?;
-    println!("Default input device info: {:#?}", &input_info);
-
-    // Construct the input stream parameters.
-    let latency = input_info.default_low_input_latency;
-    let input_params = pa::StreamParameters::<f32>::new(def_input, CHANNELS, INTERLEAVED, latency);
-
-    let def_output = pa.default_output_device()?;
-    let output_info = pa.device_info(def_output)?;
-    println!("Default output device info: {:#?}", &output_info);
-
-    // Construct the output stream parameters.
-    let latency = output_info.default_low_output_latency;
-    let output_params = pa::StreamParameters::new(def_output, CHANNELS, INTERLEAVED, latency);
-
-    // Check that the stream format is supported.
-    pa.is_duplex_format_supported(input_params, output_params, SAMPLE_RATE)?;
-
-    // Construct the settings with which we'll open our duplex stream.
-    let settings = pa::DuplexStreamSettings::new(input_params, output_params, SAMPLE_RATE, FRAMES);
-
-
+    let plat = platform::Platform::new();
+    let settings = plat.settings;
+    let pa = plat.pa;
 
     // Keep track of the last `current_time` so we can calculate the delta time.
     let mut maybe_last_time = None;
@@ -105,14 +73,14 @@ fn run() -> Result<(), pa::Error> {
     // We'll use this channel to send the count_down to the main thread for fun.
     let (sender, receiver) = ::std::sync::mpsc::channel();
 
-    let mut met = metronome::Metronome::new(140.0, TEMPO_MIX);
+    let mut met = metronome::Metronome::new(140.0, TEMPO_MIX, plat.sample_rate, plat.channels);
 
     let samples_per_beat: usize = met.samples_per_beat();
     let beats_per_repeat: usize = 10;
     let mut count_down = COUNT_DOWN_BEATS * met.beat_duration();
     let bars_to_record: usize = 128;
     let duration = (bars_to_record * beats_per_repeat) as f64 * met.beat_duration();
-    let length : usize = (((SAMPLE_RATE  * duration ) as i32) * CHANNELS) as usize;
+    let length : usize = (((plat.sample_rate  * duration ) as i32) * plat.channels) as usize;
     
 
 
@@ -154,7 +122,7 @@ fn run() -> Result<(), pa::Error> {
 
 
     // A callback to pass to the non-blocking stream.
-    let callback = move |pa::DuplexStreamCallbackArgs {
+    let callback = move |portaudio::DuplexStreamCallbackArgs {
                              in_buffer,
                              out_buffer,
                              frames,
@@ -184,7 +152,7 @@ fn run() -> Result<(), pa::Error> {
               input: &[],
               index: 0
           }).ok();
-          pa::Continue
+          portaudio::Continue
         } else {
           // Pass the input through the fuzz filter and then to the output
           // BEWARE OF FEEDBACK!
@@ -226,7 +194,7 @@ fn run() -> Result<(), pa::Error> {
           }
           // } else {
           //     // println!("{:?}", buffer);
-          //     pa::Complete
+          //     portaudio::Complete
           // } 
         }
     };
@@ -290,8 +258,8 @@ fn run() -> Result<(), pa::Error> {
     let wav_raw = &wav_raw[0..index];
     
     let spec = hound::WavSpec {
-        channels: 2,
-        sample_rate: SAMPLE_RATE as u32,
+        channels: plat.channels as u16,
+        sample_rate: plat.sample_rate as u32,
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
