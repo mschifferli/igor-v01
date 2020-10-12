@@ -1,5 +1,14 @@
 TODO.txt
 
+
+sample settings from device
+metronome as source of data
+array of effects
+
+
+
+
+
 stretch delay
 reich delay
 

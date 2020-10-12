@@ -1,7 +1,8 @@
 extern crate ringbuf;
 
 use ringbuf::{RingBuffer, Producer, Consumer};
-use super::effect::RingBufferEffect;
+// use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const SAMPLE_RATE: f64 = 44_100.0;
 const FRAMES: u32 = 64;
@@ -40,7 +41,7 @@ impl Echo {
     }
 }
 
-impl RingBufferEffect for Echo {
+impl Effect for Echo {
     fn process_sample(&mut self, input: f32) -> f32 {
         self.producer.push(input);
         let sample = self.consumer.pop().unwrap();

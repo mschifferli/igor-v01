@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
-use super::effect::BufferedEffect;
+// use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const FADE_SAMPLE_COUNT: usize = 50;
 
@@ -14,7 +15,8 @@ pub struct PolyLoop {
   index_2: usize,
   fade_out_1: usize,
   fade_out_2: usize,
-  buffer: Arc<RwLock<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>,
+  index: usize
 }
 
 
@@ -34,17 +36,20 @@ impl PolyLoop {
           index_2: 0,
           fade_out_1: samples_per_beat * beats_per_repeat_1 - FADE_SAMPLE_COUNT,
           fade_out_2: samples_per_beat * beats_per_repeat_2 - FADE_SAMPLE_COUNT,
-          buffer: buffer
+          buffer: buffer,
+          index: 0
         };
         delay
     }
     
 }
 
-impl BufferedEffect for PolyLoop {
-    fn process_sample(&mut self, index: usize) -> f32 {
+impl Effect for PolyLoop {
+    fn process_sample(&mut self, _input: f32) -> f32 {
         let mut o:f32 = 0.0;
         let buffer = self.buffer.read().unwrap();
+        let index = self.index;
+        self.index += 1;
         if index >= self.samples_per_bar_1 {
             // println!("   self.beat_index {:?}", self.beat_index);
             let mut anti_pop: f32 = 1.0;

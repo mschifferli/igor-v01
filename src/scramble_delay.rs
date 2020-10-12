@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
-use super::effect::BufferedEffect;
+// use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const FADE_SAMPLE_COUNT: usize = 50;
 
@@ -23,7 +24,8 @@ pub struct ScrambleDelay {
   beat_index: usize,
   order: Vec<usize>,
   fade_out: usize,
-  buffer: Arc<RwLock<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>,
+  index: usize
 }
 
 
@@ -50,7 +52,8 @@ impl ScrambleDelay {
           beat_index : 0, 
           order: order,
           fade_out: samples_per_beat - FADE_SAMPLE_COUNT,
-          buffer: buffer
+          buffer: buffer,
+          index : 0
         };
         delay.shuffle();
         // delay.set_beat();
@@ -98,8 +101,10 @@ impl ScrambleDelay {
     
 }
 
-impl BufferedEffect for ScrambleDelay {
-    fn process_sample(&mut self, index: usize) -> f32 {
+impl Effect for ScrambleDelay {
+    fn process_sample(&mut self, _input: f32) -> f32 {
+        let index = self.index;
+        self.index += 1;
         if index < self.samples_per_bar {
             0.0
         } else {

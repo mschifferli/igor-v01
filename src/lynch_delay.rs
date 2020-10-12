@@ -1,6 +1,7 @@
 use std::sync::{Arc, RwLock};
 
-use super::effect::BufferedEffect;
+// use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const FADE_SAMPLE_COUNT: i32 = 50;
 
@@ -12,7 +13,8 @@ pub struct LynchDelay {
   // we increment the counter by 2
   back_fade_in: i32,
   back_fade_out: i32,
-  buffer: Arc<RwLock<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>,
+  index: i32
 }
 
 
@@ -26,15 +28,16 @@ impl LynchDelay {
           back: samps - 1,
           back_fade_in: samps - FADE_SAMPLE_COUNT * 2,
           back_fade_out: -samps + FADE_SAMPLE_COUNT * 2,
-          buffer: buffer
+          buffer: buffer,
+          index: 0
         };
         delay
     }
 }
 
-impl BufferedEffect for LynchDelay {
-    fn process_sample(&mut self, index: usize) -> f32 {
-        let i2 = (index as i32) - self.jump + self.back;
+impl Effect for LynchDelay {
+    fn process_sample(&mut self, _input: f32) -> f32 {
+        let i2 = (self.index as i32) - self.jump + self.back;
         if i2 >= 0 {
             // attenuation = 0.9;
             let mut anti_pop: f32 = 1.0;
@@ -58,6 +61,7 @@ impl BufferedEffect for LynchDelay {
             //   attenuation = 0.0;
             // }
             self.back -= 2;         
+            self.index += 1;
             let buffer = self.buffer.read().unwrap();
             buffer[i2 as usize] * anti_pop
         } else {

@@ -28,7 +28,7 @@ mod poly_loop;
 // mod beat_delay;
 mod metronome;
 // use effect::{Effect, BufferedEffect, RingBufferEffect, Source};
-use effect::{BufferedEffect, Source};
+use effect::{Effect, Source};
 
 #[derive(Debug)]
 struct State {
@@ -170,7 +170,7 @@ fn run() -> Result<(), portaudio::Error> {
               // rec[index] = o2;
               // o += o2;
               // o += echo.process_sample(o);
-              o += delay.process_sample(index);
+              o += delay.process_sample(*input_sample * PRE);
               rec[index] = o;
               o += met.get_sample();
               index += 1;
