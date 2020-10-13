@@ -1,16 +1,9 @@
 use std::sync::{Arc, RwLock};
 
-use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const FADE_SAMPLE_COUNT: usize = 50;
 
-
-fn rand(n: f64) -> f64 {
-  let s = (n * 43758.5453123).sin();
-  let f = s.fract();
-  // println!("rand s {} f {}", s, f ); 
-  (n * 43758.5453123).sin().abs().fract()
-}
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 pub struct BeatDelay {
@@ -23,7 +16,8 @@ pub struct BeatDelay {
   beat_index: usize,
   order: Vec<usize>,
   fade_out: usize,
-  buffer: Arc<RwLock<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>,
+  playback_index: usize
 }
 
 
@@ -47,7 +41,8 @@ impl BeatDelay {
           beat_index : 0, 
           order: order,
           fade_out: samples_per_beat - FADE_SAMPLE_COUNT,
-          buffer: buffer
+          buffer: buffer,
+          playback_index: 0
         };
         // delay.shuffle();
         delay.set_beat();
@@ -68,9 +63,10 @@ impl BeatDelay {
     }
 }
 
-impl BufferedEffect for BeatDelay {
-    fn process_sample(&mut self, index: usize) -> f32 {
-        
+impl Effect for BeatDelay {
+    fn process_sample(&mut self, _input: f32) -> f32 {
+        let index = self.playback_index;
+        self.playback_index += 1;
         if index < self.samples_per_bar {
             0.0
         } else {

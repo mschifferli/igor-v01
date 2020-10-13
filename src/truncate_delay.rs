@@ -1,13 +1,13 @@
 use std::sync::{Arc, RwLock};
 
-use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const FADE_SAMPLE_COUNT: usize = 50;
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 fn rand(n: f64) -> f64 {
-  let s = (n * 43758.5453123).sin();
-  let f = s.fract();
+  // let s = (n * 43758.5453123).sin();
+  // let f = s.fract();
   // println!("rand s {} f {}", s, f ); 
   (n * 43758.5453123).sin().abs().fract()
 }
@@ -22,7 +22,8 @@ pub struct TruncateDelay {
   len: usize,
   count: usize,
   fade_out: usize,
-  buffer: Arc<RwLock<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>,
+  playback_index: usize
 }
 
 
@@ -32,7 +33,7 @@ impl TruncateDelay {
           beats_per_repeat: usize, 
           buffer: Arc<RwLock<Vec<f32>>>,
           seed: f64) -> Self {
-        let mut delay = TruncateDelay {
+        let delay = TruncateDelay {
           samples_per_beat: samples_per_beat,
           beats_per_repeat: beats_per_repeat,
           samples_per_bar: samples_per_beat * beats_per_repeat,
@@ -42,7 +43,8 @@ impl TruncateDelay {
           len: 1,
           count: 0,
           fade_out: samples_per_beat - FADE_SAMPLE_COUNT,
-          buffer: buffer
+          buffer: buffer,
+          playback_index: 0
         };
         delay
     }
@@ -66,8 +68,10 @@ impl TruncateDelay {
     
 }
 
-impl BufferedEffect for TruncateDelay {
-    fn process_sample(&mut self, index: usize) -> f32 {
+impl Effect for TruncateDelay {
+    fn process_sample(&mut self, _input: f32) -> f32 {
+        let index = self.playback_index;
+        self.playback_index += 1;
         if index < self.samples_per_bar {
             0.0
         } else {

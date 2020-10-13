@@ -48,7 +48,7 @@ impl Platform {
         let output_params = portaudio::StreamParameters::<f32>::new(def_output, CHANNELS, INTERLEAVED, latency);
 
         // Check that the stream format is supported.
-        pa.is_duplex_format_supported(input_params, output_params, sample_rate);
+        pa.is_duplex_format_supported(input_params, output_params, sample_rate).unwrap();
 
         // Construct the settings with which we'll open our duplex stream.
         let settings = portaudio::DuplexStreamSettings::new(input_params, output_params, sample_rate, FRAMES);

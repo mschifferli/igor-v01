@@ -15,17 +15,16 @@ use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 mod platform;
 mod effect;
-// mod fuzz;
+mod fuzz;
 mod distortion;
 mod lynch_delay;
 mod echo;
-// mod beat_delay;
-// mod scramble_delay;
-// mod truncate_delay;
-// mod truncate_loop;
+mod beat_delay;
+mod scramble_delay;
+mod truncate_delay;
+mod truncate_loop;
 mod poly_loop;
-// mod delay;
-// mod beat_delay;
+mod delay;
 mod metronome;
 // use effect::{Effect, BufferedEffect, RingBufferEffect, Source};
 use effect::{Effect, Source};
@@ -97,16 +96,16 @@ fn run() -> Result<(), portaudio::Error> {
     let recording = Arc::new(RwLock::new(recording));
     let callback_recording = Arc::clone(&recording);
 
-    let echo = echo::Echo::new(0.25);
-    let echo = Arc::new(RwLock::new(echo));
-    let callback_echo = Arc::clone(&echo);
+    // let echo = echo::Echo::new(0.25, plat.sample_rate, plat.channels);
+    // let echo = Arc::new(RwLock::new(echo));
+    // let callback_echo = Arc::clone(&echo);
 
     
-    // let fuzz = symsoftclip::SymSoftClip::new();
-    let fuzz = distortion::Distortion::new(2.0);
-    // let fuzz = fuzz::Fuzz::new(8);
-    let fuzz = Arc::new(RwLock::new(fuzz));
-    let callback_fuzz = Arc::clone(&fuzz);
+    // // let fuzz = symsoftclip::SymSoftClip::new();
+    // let fuzz = distortion::Distortion::new(2.0);
+    // // let fuzz = fuzz::Fuzz::new(8);
+    // let fuzz = Arc::new(RwLock::new(fuzz));
+    // let callback_fuzz = Arc::clone(&fuzz);
 
     // let delay = scramble_delay::ScrambleDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
     // let delay = delay::Delay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
@@ -119,14 +118,14 @@ fn run() -> Result<(), portaudio::Error> {
     let delay = Arc::new(RwLock::new(delay));
     let callback_delay = Arc::clone(&delay);
 
-    let mut effects:Vec<Box<Arc<RwLock<Effect>>>> = Vec::new();
+    let mut effects:Vec<Box<Arc<RwLock<dyn Effect>>>> = Vec::new();
     effects.push(Box::new(callback_delay));
 
     // A callback to pass to the non-blocking stream.
     let callback = move |portaudio::DuplexStreamCallbackArgs {
                              in_buffer,
                              out_buffer,
-                             frames,
+                             frames: _,
                              time,
                              ..
                          }| {
@@ -142,7 +141,7 @@ fn run() -> Result<(), portaudio::Error> {
         // let mut echo = callback_echo.write().unwrap();
         let mut rec = callback_recording.write().unwrap();
 
-        let mut fx:Vec<RwLockWriteGuard<Effect>> = Vec::new();
+        let mut fx:Vec<RwLockWriteGuard<dyn Effect>> = Vec::new();
         for effect in effects.iter() {
             fx.push(effect.write().unwrap());
         }

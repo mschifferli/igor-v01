@@ -1,16 +1,9 @@
 use std::sync::{Arc, RwLock};
 
-use super::effect::BufferedEffect;
+use super::effect::Effect;
 
 const FADE_SAMPLE_COUNT: i32 = 50;
 
-
-fn rand(n: f64) -> f64 {
-  let s = (n * 43758.5453123).sin();
-  let f = s.fract();
-  // println!("rand s {} f {}", s, f ); 
-  (n * 43758.5453123).sin().abs().fract()
-}
 
 // https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
 pub struct Delay {
@@ -20,7 +13,8 @@ pub struct Delay {
   // we increment the counter by 2
   back_fade_in: i32,
   back_fade_out: i32,
-  buffer: Arc<RwLock<Vec<f32>>>
+  buffer: Arc<RwLock<Vec<f32>>>,
+  playback_index: usize
 }
 
 
@@ -33,18 +27,21 @@ impl Delay {
           jump: samps * beats_per_repeat as i32,
           back_fade_in: samps - FADE_SAMPLE_COUNT * 2,
           back_fade_out: -samps + FADE_SAMPLE_COUNT * 2,
-          buffer: buffer
+          buffer: buffer,
+          playback_index: 0
         };
         delay
     }
 }
 
-impl BufferedEffect for Delay {
-    fn process_sample(&mut self, index: usize) -> f32 {
+impl Effect for Delay {
+    fn process_sample(&mut self, _input: f32) -> f32 {
+        let index = self.playback_index;
+        self.playback_index += 1;
         let i2 = (index as i32) - self.jump;
         if i2 >= 0 {
             // attenuation = 0.9;
-            let mut anti_pop: f32 = 1.0;            
+            let anti_pop: f32 = 1.0;            
             let buffer = self.buffer.read().unwrap();
             buffer[i2 as usize] * anti_pop
         } else {

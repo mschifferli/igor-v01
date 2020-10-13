@@ -30,7 +30,6 @@ impl Metronome {
       sample_rate: f64,
       channels: i32
       ) -> Self {
-        let beat: f64 = 60.0 / tempo as f64; // how many seconds does a beat last?
         let increment = METRO_PITCH * (std::f64::consts::PI * 2.0 / sample_rate) as f32 ;
         let mut metronome = Metronome { 
           samples_per_beat: 0,
