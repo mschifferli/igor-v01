@@ -1,9 +1,6 @@
 use super::effect::Source;
 
 
-// const SAMPLE_RATE: f64 = 44_100.0;
-// const CHANNELS: i32 = 2;
-
 const METRO_PITCH: f32 = 440.0;
 // how many samples in one cycle of the sine wave at this pitch?
 // const SAMPLES_PER_CYCLE: f32 = SAMPLE_RATE / METRO_PITCH;

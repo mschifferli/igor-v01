@@ -14,18 +14,20 @@ use three;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 
 mod platform;
+mod metronome;
 mod effect;
-mod fuzz;
-mod distortion;
-mod lynch_delay;
-mod echo;
+
 mod beat_delay;
+mod delay;
+mod distortion;
+mod echo;
+mod fuzz;
+mod lynch_delay;
+mod poly_loop;
 mod scramble_delay;
 mod truncate_delay;
 mod truncate_loop;
-mod poly_loop;
-mod delay;
-mod metronome;
+
 // use effect::{Effect, BufferedEffect, RingBufferEffect, Source};
 use effect::{Effect, Source};
 
@@ -47,6 +49,7 @@ const PRE: f32 = 1.0;
 const COUNT_DOWN_BEATS : f64 = 8.0;
 
 // const DRY_MIX: f32 = 0.0;
+const TEMPO : f32 = 140.0;
 const TEMPO_MIX: f32 = 0.01;
 
 fn main() {
@@ -72,27 +75,27 @@ fn run() -> Result<(), portaudio::Error> {
     // We'll use this channel to send the count_down to the main thread for fun.
     let (sender, receiver) = ::std::sync::mpsc::channel();
 
-    let mut met = metronome::Metronome::new(140.0, TEMPO_MIX, plat.sample_rate, plat.channels);
+    let mut met = metronome::Metronome::new(TEMPO, TEMPO_MIX, plat.sample_rate, plat.channels);
 
     let samples_per_beat: usize = met.samples_per_beat();
-    let beats_per_repeat: usize = 10;
+    let beats_per_repeat: usize = 5;
     let mut count_down = COUNT_DOWN_BEATS * met.beat_duration();
-    let bars_to_record: usize = 128;
-    let duration = (bars_to_record * beats_per_repeat) as f64 * met.beat_duration();
-    let length : usize = (((plat.sample_rate  * duration ) as i32) * plat.channels) as usize;
+    // let bars_to_record: usize = 128;
+    // let duration = (bars_to_record * beats_per_repeat) as f64 * met.beat_duration();
+    // let length : usize = (((plat.sample_rate  * duration ) as i32) * plat.channels) as usize;
     
 
 
 
     let _att: f32 = 0.5;
-    let buffer: Vec<f32> = vec![0.0; length];
+    let buffer: Vec<f32> = Vec::new();
     let buffer = Arc::new(RwLock::new(buffer));
     let callback_buffer = Arc::clone(&buffer);
     let mut index: usize = 0;
     let max_index = Arc::new(RwLock::new(0));
     let max_index = Arc::clone(&max_index);
     
-    let recording: Vec<f32> = vec![0.0; length];
+    let recording: Vec<f32> = Vec::new();
     let recording = Arc::new(RwLock::new(recording));
     let callback_recording = Arc::clone(&recording);
 
@@ -113,7 +116,7 @@ fn run() -> Result<(), portaudio::Error> {
     // let delay = beat_delay::BeatDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer));
     // let delay = truncate_delay::TruncateDelay::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
     // let delay = truncate_loop::TruncateLoop::new(samples_per_beat, beats_per_repeat, Arc::clone(&buffer), 1.0);
-    let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat - 1, Arc::clone(&buffer));
+    let delay = poly_loop::PolyLoop::new(samples_per_beat, beats_per_repeat, beats_per_repeat + 2, Arc::clone(&buffer));
     
     let delay = Arc::new(RwLock::new(delay));
     let callback_delay = Arc::clone(&delay);
@@ -167,7 +170,7 @@ fn run() -> Result<(), portaudio::Error> {
               o = *input_sample * PRE;
               {
                 let mut buff = callback_buffer.write().unwrap();
-                buff[index] = o;
+                buff.push(o);
               }
               
               // o = fuzz.process_sample(o);
@@ -180,13 +183,13 @@ fn run() -> Result<(), portaudio::Error> {
               for effek in fx.iter_mut() {
                 o += effek.process_sample(o);
               }
-              rec[index] = o;
+              rec.push(o);
               o += met.get_sample();
               index += 1;
-              if index >= length {
-                index = 0;
-                println!("Overwriting in buffer");
-              }
+              // if index >= length {
+              //   index = 0;
+              //   println!("Overwriting in buffer");
+              // }
               // *output_sample = o
               // *output_sample = o.clamp(-1.0, 1.0)
               *output_sample = o.max(-1.0).min(1.0)

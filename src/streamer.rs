@@ -3,9 +3,10 @@ extern crate ringbuf;
 use ringbuf::{RingBuffer, Producer, Consumer};
 use super::effect::RingBufferEffect;
 
-const SAMPLE_RATE: f64 = 44_100.0;
+// const SAMPLE_RATE: f64 = 44_100.0;
+const SAMPLE_RATE: f64 = 48_000.0;
 const FRAMES: u32 = 64;
-const CHANNELS: i32 = 2;
+const CHANNELS: i32 = 1;
 const LOWEST_PITCH: f32 = 30.0; // low B
 const LATENCY_SAMPLES: usize = (SAMPLE_RATE / LOWEST_PITCH * CHANNELS) as usize;
 

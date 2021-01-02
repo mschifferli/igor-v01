@@ -1,7 +1,7 @@
 extern crate portaudio;
 
 const FRAMES: u32 = 64;
-const CHANNELS: i32 = 2;
+const CHANNELS: i32 = 1;
 const INTERLEAVED: bool = true;
 
 
@@ -35,7 +35,7 @@ impl Platform {
 
         // Construct the input stream parameters.
         let latency = input_info.default_low_input_latency;
-        let channels: i32 = 2; // costrained by input_info.max_output_channels
+        let channels: i32 = CHANNELS; // costrained by input_info.max_output_channels
         let sample_rate: f64 = input_info.default_sample_rate;
         let input_params = portaudio::StreamParameters::<f32>::new(def_input, channels, INTERLEAVED, latency);
 
@@ -47,8 +47,13 @@ impl Platform {
         let latency = output_info.default_low_output_latency;
         let output_params = portaudio::StreamParameters::<f32>::new(def_output, CHANNELS, INTERLEAVED, latency);
 
+        match pa.is_duplex_format_supported(input_params, output_params, sample_rate) {
+              Ok(_) => {}, 
+              Err(e) => { eprintln!("Example failed with the following: {:?}", e) }
+          }
+
         // Check that the stream format is supported.
-        pa.is_duplex_format_supported(input_params, output_params, sample_rate).unwrap();
+        // pa.is_duplex_format_supported(input_params, output_params, sample_rate).unwrap();
 
         // Construct the settings with which we'll open our duplex stream.
         let settings = portaudio::DuplexStreamSettings::new(input_params, output_params, sample_rate, FRAMES);

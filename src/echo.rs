@@ -4,21 +4,13 @@ use ringbuf::{RingBuffer, Producer, Consumer};
 // use super::effect::BufferedEffect;
 use super::effect::Effect;
 
-// const SAMPLE_RATE: f64 = 44_100.0;
-// =const CHANNELS: i32 = 2;
-
-
-
 // straight up fuzz. 
 // currently reps indicates a quantized amount
 // of fuzzivess. Would be nice to do something 
 // more gradual
 pub struct Echo { 
-  // latency: f32,
   producer: Producer<f32>, 
   consumer: Consumer<f32>
-  // sample_rate: f64
-  // channels: i32
 }
 
 impl Echo {
